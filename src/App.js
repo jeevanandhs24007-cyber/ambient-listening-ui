@@ -2,11 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Video, Mic, MicOff, VideoOff, Users, PhoneOff, Phone, PhoneIncoming, Check, X, UserPlus, ChevronDown, ChevronUp, FileText, Download, Play, Pause } from 'lucide-react';
  
 // ==================== CONFIGURATION ====================
-const API_BASE_URL = 'https://z8xdlglm-8000.inc1.devtunnels.ms/pyapi/ambientlistening/api/v1';
-
+const API_BASE_URL = 'http://40.76.138.76:8000/pyapi/ambientlistening/api/v1';
 
 const WS_ENABLED = true;
-const WS_BASE_URL = 'wss://z8xdlglm-8000.inc1.devtunnels.ms/pyapi/ambientlistening/api/v1';
+const WS_BASE_URL = 'ws://40.76.138.76:8000/pyapi/ambientlistening/api/v1';
  
 const App = () => {
   // ==================== STATE ====================
@@ -77,15 +76,15 @@ const App = () => {
       isConnecting = true;
       const wsUrl = `${WS_BASE_URL}/ws/call-notifications/${userId}?adusername=${username}`;
       console.log('🔌 Connecting to WebSocket:', wsUrl);
-     
+ 
       const ws = new WebSocket(wsUrl);
-     
+ 
       ws.onopen = () => {
         console.log('✅ Connected to WebSocket:', username);
         isConnecting = false;
         reconnectAttempts = 0;
         setWsConnected(true);
-       
+ 
         pingInterval = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send('ping');
@@ -98,7 +97,7 @@ const App = () => {
           if (event.data === 'pong') {
             return;
           }
-         
+ 
           const data = JSON.parse(event.data);
           console.log(`[${username}] WS message:`, data);
           handleWebSocketMessage(data);
@@ -111,25 +110,25 @@ const App = () => {
         console.error('WebSocket error:', error);
         isConnecting = false;
       };
-     
+ 
       ws.onclose = (event) => {
         console.log('WebSocket disconnected. Code:', event.code, 'Clean:', event.wasClean);
         isConnecting = false;
         setWsConnected(false);
-       
+ 
         if (pingInterval) {
           clearInterval(pingInterval);
         }
-       
+ 
         if (reconnectTimeout) {
           clearTimeout(reconnectTimeout);
         }
-       
+ 
         // Only reconnect if we're still logged in and it wasn't a manual cleanup
         if (username && userId && view !== 'login' && reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !isCleanupInProgress) {
           reconnectAttempts++;
           const delay = Math.min(3000 * reconnectAttempts, 30000);
-          console.log(`Will reconnect in ${delay/1000}s... (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+          console.log(`Will reconnect in ${delay / 1000}s... (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
           reconnectTimeout = setTimeout(connectWs, delay);
         }
       };
@@ -138,7 +137,7 @@ const App = () => {
     };
  
     connectWs();
-   
+ 
     return () => {
       isCleanupInProgress = true;
       if (pingInterval) clearInterval(pingInterval);
@@ -164,12 +163,12 @@ const App = () => {
       currentView: view,
       username: username
     });
-   
+ 
     switch (data.type) {
       case 'connection_established':
         console.log('✅ Connection established', data.is_reconnect ? '(reconnect)' : '(new)');
         break;
-       
+ 
       case 'incoming_call':
         console.log('📞 Incoming call:', data);
         setIncomingCalls(prev => [...prev, {
@@ -179,28 +178,28 @@ const App = () => {
           room_name: data.room_name
         }]);
         break;
-       
+ 
       case 'call_accepted':
         console.log('✅ Call accepted by:', data.accepter_name);
         if (callId) {
           fetchParticipants(callId);
         }
         break;
-       
+ 
       case 'participant_joined':
         console.log('👤 Participant joined:', data.participant_name);
         if (callId) {
           fetchParticipants(callId);
         }
         break;
-       
+ 
       case 'participant_left':
         console.log('👋 Participant left:', data.participant_name);
         if (callId) {
           fetchParticipants(callId);
         }
         break;
-       
+ 
       case 'call_ended':
         console.log('🔵 Call ended notification received:', {
           data_call_id: data.call_id,
@@ -208,7 +207,7 @@ const App = () => {
           match: callId === data.call_id,
           in_room: view === 'room'
         });
-       
+ 
         if (view === 'room' && callId === data.call_id) {
           console.log('⚠️ SHOWING ALERT - Call ended by host');
           alert('Call has been ended by the host');
@@ -217,7 +216,7 @@ const App = () => {
           console.log('ℹ️ Ignoring call_ended - not in matching call');
         }
         break;
-       
+ 
       case 'recording_started':
         setIsRecording(true);
         break;
@@ -227,7 +226,7 @@ const App = () => {
         setTranscriptionReadyData(data);
         setShowTranscriptionModal(true);
         break;
-       
+ 
       default:
         console.log('❓ Unknown message type:', data.type);
         break;
@@ -239,7 +238,7 @@ const App = () => {
     const handleBeforeUnload = () => {
       if (wsRef.current) wsRef.current.close();
       if (room) room.disconnect();
-     
+ 
       if (callId && userType === 'provider') {
         navigator.sendBeacon(
           `${API_BASE_URL}/calls/${callId}/end-by-username`,
@@ -256,22 +255,22 @@ const App = () => {
   const apiCall = async (endpoint, method = 'GET', body = null) => {
     const fullUrl = `${API_BASE_URL}${endpoint}`;
     console.log('API Call URL:', fullUrl);
-   
+ 
     try {
       const options = {
         method,
         headers: { 'Content-Type': 'application/json' },
       };
-     
+ 
       if (body) options.body = JSON.stringify(body);
-     
+ 
       const response = await fetch(fullUrl, options);
       const data = await response.json();
-     
+ 
       if (!response.ok) {
         throw new Error(data.detail || data.message || 'API call failed');
       }
-     
+ 
       return data;
     } catch (error) {
       console.error('API Error:', error);
@@ -285,10 +284,10 @@ const App = () => {
       setLoadingOnlineUsers(true);
       const response = await apiCall('/ws/online-users');
       const users = response.data?.users || [];
-     
+ 
       const otherUsers = users.filter(u => u.adusername !== username);
       setOnlineUsers(otherUsers);
-     
+ 
       console.log('👥 Online users:', otherUsers.length);
     } catch (error) {
       console.error('Error fetching online users:', error);
@@ -324,21 +323,19 @@ const App = () => {
     }
   };
  
-  // Poll for online users on provider dashboard
   useEffect(() => {
     if (view === 'dashboard' && userType === 'provider') {
-      fetchOnlineUsers();
-      const interval = setInterval(fetchOnlineUsers, 5000);
-      return () => clearInterval(interval);
+      fetchOnlineUsers();  // Fetch only once
     }
   }, [view, userType, username]);
+ 
  
   // ==================== LOGIN ====================
   const loginUser = async (adusername, role) => {
     try {
       const response = await apiCall(`/calls/users/by-username/${adusername}`);
       const userData = response.data;
-     
+ 
       setUserId(userData.user_id);
       setUsername(adusername);
       setUserType(role);
@@ -355,7 +352,7 @@ const App = () => {
       alert('Twilio SDK not loaded yet.');
       return;
     }
-   
+ 
     try {
       const response = await apiCall('/calls/start-by-username', 'POST', {
         caller_adusername: username,
@@ -367,15 +364,15 @@ const App = () => {
       const data = response.data;
       const accessToken = data.access_token || data.caller_token;
       const roomName = data.room_name || data.twilio_room_name;
-     
+ 
       setCallData(data);
       setCallId(data.call_id);
       setParticipantsInCall([username]);
-     
+ 
       if (accessToken && roomName) {
         setView('room');
         setIsRecording(true);
-       
+ 
         setTimeout(() => {
           joinRoom(accessToken, roomName);
         }, 300);
@@ -393,7 +390,7 @@ const App = () => {
       alert('Twilio SDK not loaded yet.');
       return;
     }
-   
+ 
     try {
       const response = await apiCall(`/calls/${call.call_id}/accept-by-username`, 'POST', {
         adusername: username
@@ -402,14 +399,14 @@ const App = () => {
       const data = response.data;
       const accessToken = data.access_token || data.token;
       const roomName = data.room_name || data.twilio_room_name || call.room_name;
-     
+ 
       setCallData(data);
       setCallId(call.call_id);
       setIncomingCalls(prev => prev.filter(c => c.call_id !== call.call_id));
-     
+ 
       if (accessToken && roomName) {
         setView('room');
-       
+ 
         setTimeout(() => {
           joinRoom(accessToken, roomName);
         }, 300);
@@ -427,7 +424,7 @@ const App = () => {
       await apiCall(`/calls/${call.call_id}/decline-by-username`, 'POST', {
         adusername: username
       });
-     
+ 
       setIncomingCalls(prev => prev.filter(c => c.call_id !== call.call_id));
     } catch (error) {
       console.error('Error declining call:', error);
@@ -441,7 +438,7 @@ const App = () => {
         caller_adusername: username,
         new_participant_adusername: participantUsername
       });
-     
+ 
       alert(`${participantUsername} has been invited`);
     } catch (error) {
       alert(`Failed to add participant: ${error.message}`);
@@ -451,11 +448,11 @@ const App = () => {
   // ==================== FETCH PARTICIPANTS ====================
   const fetchParticipants = async (currentCallId) => {
     if (!currentCallId) return;
-   
+ 
     try {
       const response = await apiCall(`/calls/${currentCallId}/participants`);
       const participants = response.data?.participants || [];
-     
+ 
       setParticipantsInCall(participants.map(p => p.display_name));
     } catch (error) {
       console.error('Error fetching participants:', error);
@@ -489,7 +486,7 @@ const App = () => {
       if (localVideoRef.current) {
         localVideoRef.current.innerHTML = '';
         const videoTrack = localTracks.find(track => track.kind === 'video');
-       
+ 
         if (videoTrack) {
           const videoElement = videoTrack.attach();
           videoElement.style.width = '100%';
@@ -498,7 +495,7 @@ const App = () => {
           videoElement.autoplay = true;
           videoElement.playsInline = true;
           videoElement.muted = true;
-         
+ 
           localVideoRef.current.appendChild(videoElement);
         }
       }
@@ -650,12 +647,12 @@ const App = () => {
             Call ID: {transcriptionReadyData?.callId?.substring(0, 8)}...
           </p>
         </div>
-       
+ 
         <div className="p-6">
           <p className="text-gray-600 mb-6">
             The transcription for your recent call is now available. Would you like to view it?
           </p>
-         
+ 
           <div className="flex gap-3">
             <button
               onClick={() => setShowTranscriptionModal(false)}
@@ -686,7 +683,7 @@ const App = () => {
   // ==================== TRANSCRIPTION VIEW ====================
   if (view === 'transcription' && transcriptionData) {
     const { transcription } = transcriptionData;
-   
+ 
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col">
         {/* Header */}
@@ -706,7 +703,7 @@ const App = () => {
                 </p>
               </div>
             </div>
-           
+ 
             {/* <div className="flex items-center gap-3">
               <div className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
                 Confidence: {(transcription.confidence * 100).toFixed(1)}%
@@ -720,38 +717,39 @@ const App = () => {
  
         {/* Content */}
         <div className="flex-1 overflow-auto p-6">
-          <div className="max-w-3xl mx-auto space-y-6">
+          <div className="max-w-3xl mx-auto space-y-8">
+ 
             {transcription.utterances.map((utterance, index) => {
-              const isSpeaker1 = utterance.speaker === 'Speaker 1'; // Adjust logic based on actual speaker mapping
-             
+              const prev = transcription.utterances[index - 1];
+              const isNewSpeaker = !prev || prev.speaker_label !== utterance.speaker_label;
+ 
               return (
-                <div
-                  key={index}
-                  className={`flex gap-4 ${isSpeaker1 ? 'flex-row' : 'flex-row-reverse'}`}
-                >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    isSpeaker1 ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600'
-                  }`}>
-                    <span className="font-bold text-sm">{utterance.speaker_label.split(' ')[1]}</span>
-                  </div>
-                 
-                  <div className={`flex-1 max-w-[80%] ${isSpeaker1 ? 'items-start' : 'items-end flex flex-col'}`}>
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-gray-700">{utterance.speaker_label}</span>
+                <div key={index} className="space-y-2">
+ 
+                  {/* Speaker Header - appears only when speaker changes */}
+                  {isNewSpeaker && (
+                    <div className="flex items-center gap-3 mt-6">
+                      <div className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-200 text-gray-800 font-semibold">
+                        {utterance.speaker_label.split(" ")[1]}
+                      </div>
+                      <div className="text-lg font-semibold text-gray-900">
+                        {utterance.speaker_label}
+                      </div>
                     </div>
-                    <div className={`p-4 rounded-2xl ${
-                      isSpeaker1
-                        ? 'bg-white border border-gray-200 rounded-tl-none'
-                        : 'bg-blue-600 text-white rounded-tr-none'
-                    }`}>
-                      <p className="leading-relaxed">{utterance.text}</p>
-                    </div>
+                  )}
+ 
+                  {/* Utterance Block */}
+                  <div className="ml-14 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+                    <p className="text-gray-800 leading-relaxed">{utterance.text}</p>
                   </div>
+ 
                 </div>
               );
             })}
+ 
           </div>
         </div>
+ 
       </div>
     );
   }
@@ -772,11 +770,10 @@ const App = () => {
           <div className="space-y-4 mb-6">
             <button
               onClick={() => setUserType('provider')}
-              className={`w-full p-4 rounded-xl border-2 transition-all ${
-                userType === 'provider'
-                  ? 'border-blue-600 bg-blue-50'
-                  : 'border-gray-200 hover:border-blue-300'
-              }`}
+              className={`w-full p-4 rounded-xl border-2 transition-all ${userType === 'provider'
+                ? 'border-blue-600 bg-blue-50'
+                : 'border-gray-200 hover:border-blue-300'
+                }`}
             >
               <div className="text-left">
                 <h3 className="font-semibold text-gray-800">Provider/Caller</h3>
@@ -786,11 +783,10 @@ const App = () => {
  
             <button
               onClick={() => setUserType('participant')}
-              className={`w-full p-4 rounded-xl border-2 transition-all ${
-                userType === 'participant'
-                  ? 'border-green-600 bg-green-50'
-                  : 'border-gray-200 hover:border-green-300'
-              }`}
+              className={`w-full p-4 rounded-xl border-2 transition-all ${userType === 'participant'
+                ? 'border-green-600 bg-green-50'
+                : 'border-gray-200 hover:border-green-300'
+                }`}
             >
               <div className="text-left">
                 <h3 className="font-semibold text-gray-800">Participant</h3>
@@ -849,7 +845,7 @@ const App = () => {
                 Logout
               </button>
             </div>
-           
+ 
  
  
             <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
@@ -865,7 +861,7 @@ const App = () => {
                   🔄 Refresh
                 </button>
               </div>
-             
+ 
               {loadingOnlineUsers ? (
                 <div className="text-center py-4">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -878,11 +874,10 @@ const App = () => {
                   {onlineUsers.map(user => (
                     <div
                       key={user.user_id}
-                      className={`flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer ${
-                        selectedUsers.includes(user.adusername)
-                          ? 'bg-blue-50 border-blue-300'
-                          : 'bg-white border-gray-200 hover:border-blue-300'
-                      }`}
+                      className={`flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer ${selectedUsers.includes(user.adusername)
+                        ? 'bg-blue-50 border-blue-300'
+                        : 'bg-white border-gray-200 hover:border-blue-300'
+                        }`}
                       onClick={() => {
                         if (selectedUsers.includes(user.adusername)) {
                           setSelectedUsers(prev => prev.filter(u => u !== user.adusername));
@@ -910,7 +905,7 @@ const App = () => {
                   <p className="text-gray-600 font-medium">No users online</p>
                 </div>
               )}
-             
+ 
               <div className="pt-4 border-t border-gray-300">
                 <p className="text-sm text-gray-600 mb-2">Or add manually:</p>
                 <input
@@ -1060,7 +1055,7 @@ const App = () => {
                   <span className="text-white text-sm font-medium">Recording</span>
                 </div>
               )}
-             
+ 
               <button
                 onClick={() => setShowParticipantsList(!showParticipantsList)}
                 className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded-full transition-colors"
@@ -1069,7 +1064,7 @@ const App = () => {
                 <span className="text-white text-sm">{remoteParticipants.length + 1}</span>
                 {showParticipantsList ? <ChevronUp size={16} className="text-white" /> : <ChevronDown size={16} className="text-white" />}
               </button>
-             
+ 
               {userType === 'provider' && (
                 <button
                   onClick={() => {
@@ -1084,7 +1079,7 @@ const App = () => {
               )}
             </div>
           </div>
-         
+ 
           {showParticipantsList && (
             <div className="mt-4 bg-gray-700 rounded-lg p-4">
               <h3 className="text-white font-semibold mb-2">Participants</h3>
@@ -1125,18 +1120,16 @@ const App = () => {
           <div className="flex justify-center items-center gap-4">
             <button
               onClick={toggleAudio}
-              className={`p-4 rounded-full transition-colors ${
-                isAudioEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'
-              }`}
+              className={`p-4 rounded-full transition-colors ${isAudioEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'
+                }`}
             >
               {isAudioEnabled ? <Mic className="text-white" size={24} /> : <MicOff className="text-white" size={24} />}
             </button>
  
             <button
               onClick={toggleVideo}
-              className={`p-4 rounded-full transition-colors ${
-                isVideoEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'
-              }`}
+              className={`p-4 rounded-full transition-colors ${isVideoEnabled ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-600 hover:bg-red-700'
+                }`}
             >
               {isVideoEnabled ? <Video className="text-white" size={24} /> : <VideoOff className="text-white" size={24} />}
             </button>
