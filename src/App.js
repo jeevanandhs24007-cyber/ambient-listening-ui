@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Video, Mic, MicOff, VideoOff, Users, PhoneOff, Phone, PhoneIncoming, Check, X, UserPlus, ChevronDown, ChevronUp } from 'lucide-react';
-
+import { Video, Mic, MicOff, VideoOff, Users, PhoneOff, Phone, PhoneIncoming, Check, X, UserPlus, ChevronDown, ChevronUp, FileText, Download, Play, Pause } from 'lucide-react';
+ 
 // ==================== CONFIGURATION ====================
-const API_BASE_URL = 'http://localhost:8000/pyapi/ambientlistening/api/v1';
-const WS_ENABLED = true;
-const WS_BASE_URL = 'ws://localhost:8000/pyapi/ambientlistening/api/v1';
+const API_BASE_URL = 'https://z8xdlglm-8000.inc1.devtunnels.ms/pyapi/ambientlistening/api/v1';
 
+
+const WS_ENABLED = true;
+const WS_BASE_URL = 'wss://z8xdlglm-8000.inc1.devtunnels.ms/pyapi/ambientlistening/api/v1';
+ 
 const App = () => {
   // ==================== STATE ====================
   const [view, setView] = useState('login');
+ 
   const [userType, setUserType] = useState(null);
   const [username, setUsername] = useState('');
   const [userId, setUserId] = useState(null);
@@ -20,7 +23,7 @@ const App = () => {
   const [showParticipantsList, setShowParticipantsList] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const [loadingOnlineUsers, setLoadingOnlineUsers] = useState(false);
-  
+ 
   // Twilio state
   const [room, setRoom] = useState(null);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
@@ -28,11 +31,20 @@ const App = () => {
   const [remoteParticipants, setRemoteParticipants] = useState([]);
   const [isRecording, setIsRecording] = useState(false);
   const [participantsInCall, setParticipantsInCall] = useState([]);
-  
+ 
+  // Transcription state
+  const [transcriptionReadyData, setTranscriptionReadyData] = useState(null);
+  const [transcriptionData, setTranscriptionData] = useState(null);
+  const [loadingTranscription, setLoadingTranscription] = useState(false);
+  const [showTranscriptionModal, setShowTranscriptionModal] = useState(false);
+  const [showTranscriptionView, setShowTranscriptionView] = useState(false);
+ 
   const localVideoRef = useRef(null);
   const remoteVideoRefs = useRef({});
   const wsRef = useRef(null);
-
+ 
+ 
+ 
   // ==================== LOAD TWILIO SDK ====================
   useEffect(() => {
     const script = document.createElement('script');
@@ -43,50 +55,50 @@ const App = () => {
       if (document.body.contains(script)) document.body.removeChild(script);
     };
   }, []);
-
+ 
   // ==================== WEBSOCKET CONNECTION ====================
   useEffect(() => {
     if (!username || !userId || view === 'login' || !WS_ENABLED) {
       return;
     }
-
+ 
     let reconnectTimeout;
     let isConnecting = false;
     let pingInterval;
     let reconnectAttempts = 0;
     const MAX_RECONNECT_ATTEMPTS = 10;
     let isCleanupInProgress = false;
-
+ 
     const connectWs = () => {
       if (isConnecting || wsRef.current?.readyState === WebSocket.OPEN || isCleanupInProgress) {
         return;
       }
-
+ 
       isConnecting = true;
       const wsUrl = `${WS_BASE_URL}/ws/call-notifications/${userId}?adusername=${username}`;
       console.log('🔌 Connecting to WebSocket:', wsUrl);
-      
+     
       const ws = new WebSocket(wsUrl);
-      
+     
       ws.onopen = () => {
         console.log('✅ Connected to WebSocket:', username);
         isConnecting = false;
         reconnectAttempts = 0;
         setWsConnected(true);
-        
+       
         pingInterval = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send('ping');
           }
         }, 30000);
       };
-
+ 
       ws.onmessage = (event) => {
         try {
           if (event.data === 'pong') {
             return;
           }
-          
+         
           const data = JSON.parse(event.data);
           console.log(`[${username}] WS message:`, data);
           handleWebSocketMessage(data);
@@ -94,25 +106,25 @@ const App = () => {
           console.error('Error parsing WebSocket message:', e);
         }
       };
-
+ 
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
         isConnecting = false;
       };
-      
+     
       ws.onclose = (event) => {
         console.log('WebSocket disconnected. Code:', event.code, 'Clean:', event.wasClean);
         isConnecting = false;
         setWsConnected(false);
-        
+       
         if (pingInterval) {
           clearInterval(pingInterval);
         }
-        
+       
         if (reconnectTimeout) {
           clearTimeout(reconnectTimeout);
         }
-        
+       
         // Only reconnect if we're still logged in and it wasn't a manual cleanup
         if (username && userId && view !== 'login' && reconnectAttempts < MAX_RECONNECT_ATTEMPTS && !isCleanupInProgress) {
           reconnectAttempts++;
@@ -121,12 +133,12 @@ const App = () => {
           reconnectTimeout = setTimeout(connectWs, delay);
         }
       };
-
+ 
       wsRef.current = ws;
     };
-
+ 
     connectWs();
-    
+   
     return () => {
       isCleanupInProgress = true;
       if (pingInterval) clearInterval(pingInterval);
@@ -142,7 +154,7 @@ const App = () => {
       }
     };
   }, [username, userId, view]);
-
+ 
   // ==================== HANDLE WEBSOCKET MESSAGES ====================
   const handleWebSocketMessage = (data) => {
     console.log('🔔 WebSocket Message Received:', {
@@ -152,12 +164,12 @@ const App = () => {
       currentView: view,
       username: username
     });
-    
+   
     switch (data.type) {
       case 'connection_established':
         console.log('✅ Connection established', data.is_reconnect ? '(reconnect)' : '(new)');
         break;
-        
+       
       case 'incoming_call':
         console.log('📞 Incoming call:', data);
         setIncomingCalls(prev => [...prev, {
@@ -167,28 +179,28 @@ const App = () => {
           room_name: data.room_name
         }]);
         break;
-        
+       
       case 'call_accepted':
         console.log('✅ Call accepted by:', data.accepter_name);
         if (callId) {
           fetchParticipants(callId);
         }
         break;
-        
+       
       case 'participant_joined':
         console.log('👤 Participant joined:', data.participant_name);
         if (callId) {
           fetchParticipants(callId);
         }
         break;
-        
+       
       case 'participant_left':
         console.log('👋 Participant left:', data.participant_name);
         if (callId) {
           fetchParticipants(callId);
         }
         break;
-        
+       
       case 'call_ended':
         console.log('🔵 Call ended notification received:', {
           data_call_id: data.call_id,
@@ -196,7 +208,7 @@ const App = () => {
           match: callId === data.call_id,
           in_room: view === 'room'
         });
-        
+       
         if (view === 'room' && callId === data.call_id) {
           console.log('⚠️ SHOWING ALERT - Call ended by host');
           alert('Call has been ended by the host');
@@ -205,23 +217,29 @@ const App = () => {
           console.log('ℹ️ Ignoring call_ended - not in matching call');
         }
         break;
-        
+       
       case 'recording_started':
         setIsRecording(true);
         break;
-        
+ 
+      case 'transcription_ready':
+        console.log('📝 Transcription ready:', data);
+        setTranscriptionReadyData(data);
+        setShowTranscriptionModal(true);
+        break;
+       
       default:
         console.log('❓ Unknown message type:', data.type);
         break;
     }
   };
-
+ 
   // ==================== PAGE UNLOAD CLEANUP ====================
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (wsRef.current) wsRef.current.close();
       if (room) room.disconnect();
-      
+     
       if (callId && userType === 'provider') {
         navigator.sendBeacon(
           `${API_BASE_URL}/calls/${callId}/end-by-username`,
@@ -229,47 +247,48 @@ const App = () => {
         );
       }
     };
-
+ 
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [room, callId, userType, username]);
-
+ 
   // ==================== API HELPER ====================
   const apiCall = async (endpoint, method = 'GET', body = null) => {
     const fullUrl = `${API_BASE_URL}${endpoint}`;
-    
+    console.log('API Call URL:', fullUrl);
+   
     try {
       const options = {
         method,
         headers: { 'Content-Type': 'application/json' },
       };
-      
+     
       if (body) options.body = JSON.stringify(body);
-      
+     
       const response = await fetch(fullUrl, options);
       const data = await response.json();
-      
+     
       if (!response.ok) {
         throw new Error(data.detail || data.message || 'API call failed');
       }
-      
+     
       return data;
     } catch (error) {
       console.error('API Error:', error);
       throw error;
     }
   };
-
+ 
   // ==================== FETCH ONLINE USERS ====================
   const fetchOnlineUsers = async () => {
     try {
       setLoadingOnlineUsers(true);
       const response = await apiCall('/ws/online-users');
       const users = response.data?.users || [];
-      
+     
       const otherUsers = users.filter(u => u.adusername !== username);
       setOnlineUsers(otherUsers);
-      
+     
       console.log('👥 Online users:', otherUsers.length);
     } catch (error) {
       console.error('Error fetching online users:', error);
@@ -277,7 +296,34 @@ const App = () => {
       setLoadingOnlineUsers(false);
     }
   };
-
+ 
+  // ==================== FETCH TRANSCRIPTION ====================
+  const fetchTranscription = async () => {
+    if (!transcriptionReadyData?.call_id) {
+      console.error('No call ID found in transcriptionReadyData');
+      console.log(transcriptionData)
+      return;
+    };
+ 
+    try {
+      setLoadingTranscription(true);
+      // Using the specific URL format requested
+      // Note: We're using the base URL from config but appending the specific path
+      // If the base URL in config is different from the one in the request, we might need to adjust
+      const response = await apiCall(`/calls/${transcriptionReadyData.call_id}/transcription`);
+      console.log(response)
+      console.log('📄 Transcription fetched:', response);
+      setTranscriptionData(response.data);
+      setShowTranscriptionModal(false);
+      setView('transcription');
+    } catch (error) {
+      console.error('Error fetching transcription:', error);
+      alert('Failed to load transcription: ' + error.message);
+    } finally {
+      setLoadingTranscription(false);
+    }
+  };
+ 
   // Poll for online users on provider dashboard
   useEffect(() => {
     if (view === 'dashboard' && userType === 'provider') {
@@ -286,13 +332,13 @@ const App = () => {
       return () => clearInterval(interval);
     }
   }, [view, userType, username]);
-
+ 
   // ==================== LOGIN ====================
   const loginUser = async (adusername, role) => {
     try {
       const response = await apiCall(`/calls/users/by-username/${adusername}`);
       const userData = response.data;
-      
+     
       setUserId(userData.user_id);
       setUsername(adusername);
       setUserType(role);
@@ -302,14 +348,14 @@ const App = () => {
       alert(`Login failed: ${error.message}`);
     }
   };
-
+ 
   // ==================== START CALL ====================
   const startCallWithUsers = async (selectedUsers) => {
     if (!window.Twilio?.Video) {
       alert('Twilio SDK not loaded yet.');
       return;
     }
-    
+   
     try {
       const response = await apiCall('/calls/start-by-username', 'POST', {
         caller_adusername: username,
@@ -317,19 +363,19 @@ const App = () => {
         call_type: 'video',
         conversation_friendly_name: 'Video Consultation'
       });
-
+ 
       const data = response.data;
       const accessToken = data.access_token || data.caller_token;
       const roomName = data.room_name || data.twilio_room_name;
-      
+     
       setCallData(data);
       setCallId(data.call_id);
       setParticipantsInCall([username]);
-      
+     
       if (accessToken && roomName) {
         setView('room');
         setIsRecording(true);
-        
+       
         setTimeout(() => {
           joinRoom(accessToken, roomName);
         }, 300);
@@ -340,30 +386,30 @@ const App = () => {
       alert(`Failed to start call: ${error.message}`);
     }
   };
-
+ 
   // ==================== ACCEPT CALL ====================
   const acceptCall = async (call) => {
     if (!window.Twilio?.Video) {
       alert('Twilio SDK not loaded yet.');
       return;
     }
-    
+   
     try {
       const response = await apiCall(`/calls/${call.call_id}/accept-by-username`, 'POST', {
         adusername: username
       });
-
+ 
       const data = response.data;
       const accessToken = data.access_token || data.token;
       const roomName = data.room_name || data.twilio_room_name || call.room_name;
-      
+     
       setCallData(data);
       setCallId(call.call_id);
       setIncomingCalls(prev => prev.filter(c => c.call_id !== call.call_id));
-      
+     
       if (accessToken && roomName) {
         setView('room');
-        
+       
         setTimeout(() => {
           joinRoom(accessToken, roomName);
         }, 300);
@@ -374,20 +420,20 @@ const App = () => {
       alert(`Failed to accept call: ${error.message}`);
     }
   };
-
+ 
   // ==================== DECLINE CALL ====================
   const declineCall = async (call) => {
     try {
       await apiCall(`/calls/${call.call_id}/decline-by-username`, 'POST', {
         adusername: username
       });
-      
+     
       setIncomingCalls(prev => prev.filter(c => c.call_id !== call.call_id));
     } catch (error) {
       console.error('Error declining call:', error);
     }
   };
-
+ 
   // ==================== ADD PARTICIPANT ====================
   const addParticipantToCall = async (participantUsername) => {
     try {
@@ -395,37 +441,37 @@ const App = () => {
         caller_adusername: username,
         new_participant_adusername: participantUsername
       });
-      
+     
       alert(`${participantUsername} has been invited`);
     } catch (error) {
       alert(`Failed to add participant: ${error.message}`);
     }
   };
-
+ 
   // ==================== FETCH PARTICIPANTS ====================
   const fetchParticipants = async (currentCallId) => {
     if (!currentCallId) return;
-    
+   
     try {
       const response = await apiCall(`/calls/${currentCallId}/participants`);
       const participants = response.data?.participants || [];
-      
+     
       setParticipantsInCall(participants.map(p => p.display_name));
     } catch (error) {
       console.error('Error fetching participants:', error);
     }
   };
-
+ 
   // ==================== JOIN TWILIO ROOM ====================
   const joinRoom = async (token, roomName) => {
     if (!window.Twilio?.Video) {
       alert('Twilio SDK not loaded yet.');
       return;
     }
-
+ 
     const Video = window.Twilio.Video;
     let localTracks = [];
-
+ 
     try {
       try {
         localTracks = await Video.createLocalTracks({
@@ -439,11 +485,11 @@ const App = () => {
           return;
         }
       }
-
+ 
       if (localVideoRef.current) {
         localVideoRef.current.innerHTML = '';
         const videoTrack = localTracks.find(track => track.kind === 'video');
-        
+       
         if (videoTrack) {
           const videoElement = videoTrack.attach();
           videoElement.style.width = '100%';
@@ -452,29 +498,29 @@ const App = () => {
           videoElement.autoplay = true;
           videoElement.playsInline = true;
           videoElement.muted = true;
-          
+         
           localVideoRef.current.appendChild(videoElement);
         }
       }
-
+ 
       const connectedRoom = await Video.connect(token, {
         name: roomName,
         tracks: localTracks,
         dominantSpeaker: true,
         networkQuality: { local: 1, remote: 1 }
       });
-
+ 
       setRoom(connectedRoom);
-
+ 
       connectedRoom.on('disconnected', (room, error) => {
         if (error) console.error('Disconnect:', error);
       });
-
+ 
       connectedRoom.participants.forEach(participantConnected);
       connectedRoom.on('participantConnected', participantConnected);
       connectedRoom.on('participantDisconnected', participantDisconnected);
       connectedRoom.on('recordingStarted', () => setIsRecording(true));
-
+ 
     } catch (error) {
       console.error('Error joining room:', error);
       alert(`Failed to join: ${error.message}`);
@@ -482,27 +528,27 @@ const App = () => {
       handleCallEnd();
     }
   };
-
+ 
   // ==================== HANDLE PARTICIPANTS ====================
   const participantConnected = (participant) => {
     setRemoteParticipants(prev => {
       if (prev.find(p => p.sid === participant.sid)) return prev;
       return [...prev, participant];
     });
-
+ 
     participant.tracks.forEach(publication => {
       if (publication.isSubscribed && publication.track) {
         trackSubscribed(publication.track, participant);
       }
       publication.on('subscribed', track => trackSubscribed(track, participant));
     });
-
+ 
     participant.on('trackSubscribed', track => trackSubscribed(track, participant));
     participant.on('trackUnsubscribed', track => {
       track.detach().forEach(element => element.remove());
     });
   };
-
+ 
   const trackSubscribed = (track, participant) => {
     if (track.kind === 'video') {
       const container = remoteVideoRefs.current[participant.sid];
@@ -518,7 +564,7 @@ const App = () => {
           cont.appendChild(videoElement);
         }
       };
-
+ 
       if (container) {
         attachVideo(container);
       } else {
@@ -530,11 +576,11 @@ const App = () => {
       document.body.appendChild(audioElement);
     }
   };
-
+ 
   const participantDisconnected = (participant) => {
     setRemoteParticipants(prev => prev.filter(p => p.sid !== participant.sid));
   };
-
+ 
   // ==================== TOGGLE CONTROLS ====================
   const toggleAudio = () => {
     if (!room) return;
@@ -543,7 +589,7 @@ const App = () => {
     });
     setIsAudioEnabled(!isAudioEnabled);
   };
-
+ 
   const toggleVideo = () => {
     if (!room) return;
     room.localParticipant.videoTracks.forEach(publication => {
@@ -551,7 +597,7 @@ const App = () => {
     });
     setIsVideoEnabled(!isVideoEnabled);
   };
-
+ 
   // ==================== END CALL ====================
   const endCall = async () => {
     try {
@@ -564,7 +610,7 @@ const App = () => {
         });
         room.disconnect();
       }
-
+ 
       if (callId && userType === 'provider') {
         await apiCall(`/calls/${callId}/end-by-username`, 'POST', {
           admin_adusername: username
@@ -574,13 +620,13 @@ const App = () => {
           adusername: username
         });
       }
-
+ 
       handleCallEnd();
     } catch (error) {
       console.error('Error ending call:', error);
     }
   };
-
+ 
   const handleCallEnd = () => {
     setView('dashboard');
     setRoom(null);
@@ -590,7 +636,126 @@ const App = () => {
     setIsRecording(false);
     setParticipantsInCall([]);
   };
-
+ 
+  // ==================== TRANSCRIPTION MODAL COMPONENT ====================
+  const transcriptionModal = showTranscriptionModal ? (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100] p-4">
+      <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white">
+          <div className="flex items-center gap-3 mb-2">
+            <FileText size={24} />
+            <h3 className="text-xl font-bold">Transcription Ready</h3>
+          </div>
+          <p className="opacity-90">
+            Call ID: {transcriptionReadyData?.callId?.substring(0, 8)}...
+          </p>
+        </div>
+       
+        <div className="p-6">
+          <p className="text-gray-600 mb-6">
+            The transcription for your recent call is now available. Would you like to view it?
+          </p>
+         
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowTranscriptionModal(false)}
+              className="flex-1 px-4 py-3 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-medium transition-colors"
+            >
+              Dismiss
+            </button>
+            <button
+              onClick={fetchTranscription}
+              disabled={loadingTranscription}
+              className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700 font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              {loadingTranscription ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <>
+                  <Download size={18} />
+                  Load Transcription
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : null;
+ 
+  // ==================== TRANSCRIPTION VIEW ====================
+  if (view === 'transcription' && transcriptionData) {
+    const { transcription } = transcriptionData;
+   
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
+          <div className="max-w-5xl mx-auto flex justify-between items-center">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => setView('dashboard')}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X size={24} className="text-gray-600" />
+              </button>
+              <div>
+                <h1 className="text-xl font-bold text-gray-800">Call Transcription</h1>
+                <p className="text-sm text-gray-500">
+                  {new Date().toLocaleDateString()} • {transcription.audio_duration} seconds
+                </p>
+              </div>
+            </div>
+           
+            {/* <div className="flex items-center gap-3">
+              <div className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
+                Confidence: {(transcription.confidence * 100).toFixed(1)}%
+              </div>
+              <div className="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+                {transcription.provider}
+              </div>
+            </div> */}
+          </div>
+        </div>
+ 
+        {/* Content */}
+        <div className="flex-1 overflow-auto p-6">
+          <div className="max-w-3xl mx-auto space-y-6">
+            {transcription.utterances.map((utterance, index) => {
+              const isSpeaker1 = utterance.speaker === 'Speaker 1'; // Adjust logic based on actual speaker mapping
+             
+              return (
+                <div
+                  key={index}
+                  className={`flex gap-4 ${isSpeaker1 ? 'flex-row' : 'flex-row-reverse'}`}
+                >
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                    isSpeaker1 ? 'bg-blue-100 text-blue-600' : 'bg-indigo-100 text-indigo-600'
+                  }`}>
+                    <span className="font-bold text-sm">{utterance.speaker_label.split(' ')[1]}</span>
+                  </div>
+                 
+                  <div className={`flex-1 max-w-[80%] ${isSpeaker1 ? 'items-start' : 'items-end flex flex-col'}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-medium text-gray-700">{utterance.speaker_label}</span>
+                    </div>
+                    <div className={`p-4 rounded-2xl ${
+                      isSpeaker1
+                        ? 'bg-white border border-gray-200 rounded-tl-none'
+                        : 'bg-blue-600 text-white rounded-tr-none'
+                    }`}>
+                      <p className="leading-relaxed">{utterance.text}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+ 
   // ==================== LOGIN VIEW ====================
   if (view === 'login') {
     return (
@@ -603,13 +768,13 @@ const App = () => {
             <h1 className="text-3xl font-bold text-gray-800 mb-2">Video Call System</h1>
             <p className="text-gray-600">Choose your role</p>
           </div>
-
+ 
           <div className="space-y-4 mb-6">
             <button
               onClick={() => setUserType('provider')}
               className={`w-full p-4 rounded-xl border-2 transition-all ${
-                userType === 'provider' 
-                  ? 'border-blue-600 bg-blue-50' 
+                userType === 'provider'
+                  ? 'border-blue-600 bg-blue-50'
                   : 'border-gray-200 hover:border-blue-300'
               }`}
             >
@@ -618,12 +783,12 @@ const App = () => {
                 <p className="text-sm text-gray-600">Start and manage calls</p>
               </div>
             </button>
-
+ 
             <button
               onClick={() => setUserType('participant')}
               className={`w-full p-4 rounded-xl border-2 transition-all ${
-                userType === 'participant' 
-                  ? 'border-green-600 bg-green-50' 
+                userType === 'participant'
+                  ? 'border-green-600 bg-green-50'
                   : 'border-gray-200 hover:border-green-300'
               }`}
             >
@@ -633,7 +798,7 @@ const App = () => {
               </div>
             </button>
           </div>
-
+ 
           <input
             type="text"
             value={username}
@@ -642,7 +807,7 @@ const App = () => {
             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-4"
             placeholder="Enter username (e.g., ANETHRA)"
           />
-
+ 
           <button
             onClick={() => username && userType && loginUser(username, userType)}
             disabled={!username || !userType}
@@ -654,7 +819,7 @@ const App = () => {
       </div>
     );
   }
-
+ 
   // ==================== PROVIDER DASHBOARD ====================
   if (view === 'dashboard' && userType === 'provider') {
     return (
@@ -684,7 +849,9 @@ const App = () => {
                 Logout
               </button>
             </div>
-
+           
+ 
+ 
             <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="flex justify-between items-center mb-3">
                 <h3 className="text-lg font-semibold text-gray-800">
@@ -698,7 +865,7 @@ const App = () => {
                   🔄 Refresh
                 </button>
               </div>
-              
+             
               {loadingOnlineUsers ? (
                 <div className="text-center py-4">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
@@ -709,8 +876,8 @@ const App = () => {
                     ✅ {onlineUsers.length} online • {selectedUsers.length} selected
                   </p>
                   {onlineUsers.map(user => (
-                    <div 
-                      key={user.user_id} 
+                    <div
+                      key={user.user_id}
                       className={`flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer ${
                         selectedUsers.includes(user.adusername)
                           ? 'bg-blue-50 border-blue-300'
@@ -743,7 +910,7 @@ const App = () => {
                   <p className="text-gray-600 font-medium">No users online</p>
                 </div>
               )}
-              
+             
               <div className="pt-4 border-t border-gray-300">
                 <p className="text-sm text-gray-600 mb-2">Or add manually:</p>
                 <input
@@ -761,7 +928,7 @@ const App = () => {
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
               </div>
-
+ 
               {selectedUsers.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-gray-300">
                   <p className="text-sm font-medium text-gray-700 mb-2">Selected ({selectedUsers.length}):</p>
@@ -781,7 +948,7 @@ const App = () => {
                 </div>
               )}
             </div>
-
+ 
             <button
               onClick={() => startCallWithUsers(selectedUsers)}
               disabled={selectedUsers.length === 0}
@@ -792,10 +959,11 @@ const App = () => {
             </button>
           </div>
         </div>
+        {transcriptionModal}
       </div>
     );
   }
-
+ 
   // ==================== PARTICIPANT DASHBOARD ====================
   if (view === 'dashboard' && userType === 'participant') {
     return (
@@ -825,7 +993,7 @@ const App = () => {
                 Logout
               </button>
             </div>
-
+ 
             {incomingCalls.length > 0 ? (
               <div>
                 <h3 className="text-lg font-semibold text-gray-800 mb-4">📞 Incoming Calls</h3>
@@ -870,10 +1038,11 @@ const App = () => {
             )}
           </div>
         </div>
+        {transcriptionModal}
       </div>
     );
   }
-
+ 
   // ==================== VIDEO ROOM VIEW ====================
   if (view === 'room') {
     return (
@@ -891,7 +1060,7 @@ const App = () => {
                   <span className="text-white text-sm font-medium">Recording</span>
                 </div>
               )}
-              
+             
               <button
                 onClick={() => setShowParticipantsList(!showParticipantsList)}
                 className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded-full transition-colors"
@@ -900,7 +1069,7 @@ const App = () => {
                 <span className="text-white text-sm">{remoteParticipants.length + 1}</span>
                 {showParticipantsList ? <ChevronUp size={16} className="text-white" /> : <ChevronDown size={16} className="text-white" />}
               </button>
-              
+             
               {userType === 'provider' && (
                 <button
                   onClick={() => {
@@ -915,7 +1084,7 @@ const App = () => {
               )}
             </div>
           </div>
-          
+         
           {showParticipantsList && (
             <div className="mt-4 bg-gray-700 rounded-lg p-4">
               <h3 className="text-white font-semibold mb-2">Participants</h3>
@@ -928,7 +1097,7 @@ const App = () => {
             </div>
           )}
         </div>
-
+ 
         <div className="flex-1 p-4 overflow-auto">
           <div className="grid grid-cols-2 gap-4 max-w-6xl mx-auto">
             <div className="relative bg-gray-800 rounded-xl overflow-hidden aspect-video">
@@ -937,10 +1106,10 @@ const App = () => {
                 <span className="text-white text-sm font-medium">You ({username})</span>
               </div>
             </div>
-
+ 
             {remoteParticipants.map((participant) => (
               <div key={participant.sid} className="relative bg-gray-800 rounded-xl overflow-hidden aspect-video">
-                <div 
+                <div
                   ref={el => remoteVideoRefs.current[participant.sid] = el}
                   className="w-full h-full"
                 ></div>
@@ -951,7 +1120,7 @@ const App = () => {
             ))}
           </div>
         </div>
-
+ 
         <div className="bg-gray-800 border-t border-gray-700 px-6 py-4">
           <div className="flex justify-center items-center gap-4">
             <button
@@ -962,7 +1131,7 @@ const App = () => {
             >
               {isAudioEnabled ? <Mic className="text-white" size={24} /> : <MicOff className="text-white" size={24} />}
             </button>
-
+ 
             <button
               onClick={toggleVideo}
               className={`p-4 rounded-full transition-colors ${
@@ -971,7 +1140,7 @@ const App = () => {
             >
               {isVideoEnabled ? <Video className="text-white" size={24} /> : <VideoOff className="text-white" size={24} />}
             </button>
-
+ 
             <button
               onClick={endCall}
               className="p-4 rounded-full bg-red-600 hover:bg-red-700 transition-colors"
@@ -980,11 +1149,15 @@ const App = () => {
             </button>
           </div>
         </div>
+        {transcriptionModal}
       </div>
     );
   }
-
+ 
+ 
+ 
+ 
   return null;
 };
-
+ 
 export default App;
